@@ -1,13 +1,13 @@
 import tensorflow as tf
 
 class BaseGAttN:
-    def loss(logits, labels, nb_classes, class_weights):
+    def loss(self, logits, labels, nb_classes, class_weights):
         sample_wts = tf.reduce_sum(tf.multiply(tf.one_hot(labels, nb_classes), class_weights), axis=-1)
         xentropy = tf.multiply(tf.nn.sparse_softmax_cross_entropy_with_logits(
                 labels=labels, logits=logits), sample_wts)
         return tf.reduce_mean(xentropy, name='xentropy_mean')
 
-    def training(loss, lr, l2_coef):
+    def training(self, loss, lr, l2_coef):
         # weight decay
         vars = tf.trainable_variables()
         lossL2 = tf.add_n([tf.nn.l2_loss(v) for v in vars if v.name not
@@ -21,14 +21,14 @@ class BaseGAttN:
         
         return train_op
 
-    def preshape(logits, labels, nb_classes):
+    def preshape(self, logits, labels, nb_classes):
         new_sh_lab = [-1]
         new_sh_log = [-1, nb_classes]
         log_resh = tf.reshape(logits, new_sh_log)
         lab_resh = tf.reshape(labels, new_sh_lab)
         return log_resh, lab_resh
 
-    def confmat(logits, labels):
+    def confmat(self, logits, labels):
         preds = tf.argmax(logits, axis=1)
         return tf.confusion_matrix(labels, preds)
 
@@ -36,7 +36,7 @@ class BaseGAttN:
 # Adapted from tkipf/gcn #
 ##########################
 
-    def masked_softmax_cross_entropy(logits, labels, mask):
+    def masked_softmax_cross_entropy(self, logits, labels, mask):
         """Softmax cross-entropy loss with masking."""
         loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
         mask = tf.cast(mask, dtype=tf.float32)
@@ -44,7 +44,7 @@ class BaseGAttN:
         loss *= mask
         return tf.reduce_mean(loss)
 
-    def masked_sigmoid_cross_entropy(logits, labels, mask):
+    def masked_sigmoid_cross_entropy(self, logits, labels, mask):
         """Softmax cross-entropy loss with masking."""
         labels = tf.cast(labels, dtype=tf.float32)
         loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=labels)
@@ -54,7 +54,7 @@ class BaseGAttN:
         loss *= mask
         return tf.reduce_mean(loss)
 
-    def masked_accuracy(logits, labels, mask):
+    def masked_accuracy(self, logits, labels, mask):
         """Accuracy with masking."""
         correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(labels, 1))
         accuracy_all = tf.cast(correct_prediction, tf.float32)
@@ -63,7 +63,7 @@ class BaseGAttN:
         accuracy_all *= mask
         return tf.reduce_mean(accuracy_all)
 
-    def micro_f1(logits, labels, mask):
+    def micro_f1(self, logits, labels, mask):
         """Accuracy with masking."""
         predicted = tf.round(tf.nn.sigmoid(logits))
 

@@ -5,7 +5,7 @@ from utils import layers
 from models.base_gattn import BaseGAttN
 
 class GAT(BaseGAttN):
-    def inference(inputs, nb_classes, nb_nodes, training, attn_drop, ffd_drop,
+    def inference(self, inputs, nb_classes, nb_nodes, training, attn_drop, ffd_drop,
             bias_mat, hid_units, n_heads, activation=tf.nn.elu, residual=False):
         attns = []
         for _ in range(n_heads[0]):

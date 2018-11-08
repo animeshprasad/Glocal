@@ -63,6 +63,7 @@ with tf.Graph().as_default():
         ffd_drop = tf.placeholder(dtype=tf.float32, shape=())
         is_train = tf.placeholder(dtype=tf.bool, shape=())
 
+    model=model()
     logits = model.inference(ftr_in, nb_classes, nb_nodes, is_train,
                                 attn_drop, ffd_drop,
                                 bias_mat=bias_in,
