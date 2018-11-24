@@ -38,14 +38,22 @@ class BaseGAttN:
 
     def masked_softmax_cross_entropy(self, logits, labels, mask):
         """Softmax cross-entropy loss with masking."""
-        loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
+        #TODO: find good class weight
+        class_weight = tf.constant([0.065, 1.0 - 0.065])
+        weighted_logits = tf.multiply(logits, class_weight)
+        loss = tf.nn.softmax_cross_entropy_with_logits(logits=weighted_logits, labels=labels)
+        #weighted_loss = tf.multiply(logits, class_weight)
         mask = tf.cast(mask, dtype=tf.float32)
         mask /= tf.reduce_mean(mask)
-        loss *= mask
+        #weighted_loss *= mask
+        #loss *= mask
         return tf.reduce_mean(loss)
 
     def masked_sigmoid_cross_entropy(self, logits, labels, mask):
         """Softmax cross-entropy loss with masking."""
+        #TODO: find good class weight
+        #class_weight = tf.constant([0.01, 1.0 - 0.01])
+        #weighted_logits = tf.multiply(logits, class_weight)
         labels = tf.cast(labels, dtype=tf.float32)
         loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=labels)
         loss=tf.reduce_mean(loss,axis=1)

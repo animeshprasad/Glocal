@@ -5,19 +5,23 @@ import tensorflow as tf
 from models import GAT
 from utils import process
 from keyphrase_data.SemEval2010 import parse_input
+import pickle
 
 checkpt_file = 'pre_trained/cora/mod_cora.ckpt'
+train_file = 'data/train.pkl'
+test_file = 'data/test.pkl'
+
 
 dataset = 'cora'
 
 # training params
 batch_size = 1
-nb_epochs = 100000
-patience = 100
-lr = 0.005  # learning rate
+nb_epochs = 10
+patience = 10
+lr = 0.001  # learning rate
 l2_coef = 0.0005  # weight decay
-hid_units = [8] # numbers of hidden units per each attention head in each layer
-n_heads = [8, 1] # additional entry for the output layer
+hid_units = [4] # numbers of hidden units per each attention head in each layer
+n_heads = [4, 1] # additional entry for the output layer
 residual = False
 nonlinearity = tf.nn.elu
 model = GAT
@@ -34,14 +38,29 @@ print('residual: ' + str(residual))
 print('nonlinearity: ' + str(nonlinearity))
 print('model: ' + str(model))
 
+#lgraphs, lgraph_features = None, None
+# try:
+#     file = open(train_file, 'rb')
+#     pickle.load((lgraphs, lgraph_features), file)
+# except IOError:
+#     file = open(train_file, 'wb')
+#     X = parse_input.preprocessor()
+#     lgraphs, lgraph_features = X.extract('keyphrase_data/SemEval2010/train/', 'keyphrase_data/SemEval2010/train/train.combined.stem.final')
+#     pickle.dump((lgraphs, lgraph_features), file)
+
+
 X = parse_input.preprocessor()
-lgraphs, lgraph_features = X.extract('keyphrase_data/SemEval2010/train/', 'keyphrase_data/SemEval2010/train/train.combined.stem.final')
+lgraphs, lgraph_features = X.extract('keyphrase_data/SemEval2010/train/', 'keyphrase_data/SemEval2010/train/train.combined.final')
 
 adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = lgraph_features
+
+print (adj.shape, features.shape, y_train.shape, y_val.shape, y_test.shape, train_mask.shape, val_mask.shape, test_mask.shape )
 
 nb_nodes = features[0].shape[0]
 ft_size = features[0].shape[1]
 nb_classes = y_train[0].shape[1]
+
+biases = adj
 
 with tf.Graph().as_default():
     with tf.name_scope('input'):
@@ -62,9 +81,10 @@ with tf.Graph().as_default():
     log_resh = tf.reshape(logits, [-1, nb_classes])
     lab_resh = tf.reshape(lbl_in, [-1, nb_classes])
     msk_resh = tf.reshape(msk_in, [-1])
+    #log_resh = tf.Print(log_resh, [log_resh])
+    #lab_resh = tf.Print(lab_resh, [lab_resh])
     loss = model.masked_softmax_cross_entropy(log_resh, lab_resh, msk_resh)
     accuracy = model.masked_accuracy(log_resh, lab_resh, msk_resh)
-
     train_op = model.training(loss, lr, l2_coef)
 
     saver = tf.train.Saver()
@@ -84,37 +104,49 @@ with tf.Graph().as_default():
         val_acc_avg = 0
 
         for epoch in range(nb_epochs):
+            step = 0
             tr_step = 0
             tr_size = features.shape[0]
 
-            while tr_step * batch_size < tr_size:
-                _, loss_value_tr, acc_tr = sess.run([train_op, loss, accuracy],
-                    feed_dict={
-                        ftr_in: features[tr_step*batch_size:(tr_step+1)*batch_size],
-                        bias_in: biases[tr_step*batch_size:(tr_step+1)*batch_size],
-                        lbl_in: y_train[tr_step*batch_size:(tr_step+1)*batch_size],
-                        msk_in: train_mask[tr_step*batch_size:(tr_step+1)*batch_size],
-                        is_train: True,
-                        attn_drop: 0.6, ffd_drop: 0.6})
-                train_loss_avg += loss_value_tr
-                train_acc_avg += acc_tr
-                tr_step += 1
+            while step * batch_size < tr_size:
+                if train_mask[step * batch_size:(step + 1) * batch_size][0][0] == 1.0:
+                    _, loss_value_tr, acc_tr = sess.run([train_op, loss, accuracy],
+                        feed_dict={
+                            ftr_in: features[step*batch_size:(step+1)*batch_size],
+                            bias_in: biases[step*batch_size:(step+1)*batch_size],
+                            lbl_in: y_train[step*batch_size:(step+1)*batch_size],
+                            msk_in: train_mask[step*batch_size:(step+1)*batch_size],
+                            is_train: True,
+                            attn_drop: 0.6, ffd_drop: 0.6})
+                    train_loss_avg += loss_value_tr
+                    train_acc_avg += acc_tr
+                    tr_step += 1
+                step += 1
 
+            step = 0
             vl_step = 0
             vl_size = features.shape[0]
 
-            while vl_step * batch_size < vl_size:
-                loss_value_vl, acc_vl = sess.run([loss, accuracy],
-                    feed_dict={
-                        ftr_in: features[vl_step*batch_size:(vl_step+1)*batch_size],
-                        bias_in: biases[vl_step*batch_size:(vl_step+1)*batch_size],
-                        lbl_in: y_val[vl_step*batch_size:(vl_step+1)*batch_size],
-                        msk_in: val_mask[vl_step*batch_size:(vl_step+1)*batch_size],
-                        is_train: False,
-                        attn_drop: 0.0, ffd_drop: 0.0})
-                val_loss_avg += loss_value_vl
-                val_acc_avg += acc_vl
-                vl_step += 1
+            while step * batch_size < vl_size:
+                if val_mask[step * batch_size:(step+1) * batch_size][0][0] == 1.0:
+                    out_vl, loss_value_vl, acc_vl = sess.run([log_resh, loss, accuracy],
+                        feed_dict={
+                            ftr_in: features[step*batch_size:(step+1)*batch_size],
+                            bias_in: biases[step*batch_size:(step+1)*batch_size],
+                            lbl_in: y_val[step*batch_size:(step+1)*batch_size],
+                            msk_in: val_mask[step*batch_size:(step+1)*batch_size],
+                            is_train: False,
+                            attn_drop: 0.0, ffd_drop: 0.0})
+                    val_loss_avg += loss_value_vl
+                    val_acc_avg += acc_vl
+                    vl_step += 1
+
+                    unique, counts = np.unique(np.argmax(out_vl, axis=1), return_counts=True)
+                    print (dict(zip(unique, counts)))
+
+                step += 1
+
+
 
             print('Training: loss = %.5f, acc = %.5f | Val: loss = %.5f, acc = %.5f' %
                     (train_loss_avg/tr_step, train_acc_avg/tr_step,
@@ -143,22 +175,25 @@ with tf.Graph().as_default():
         saver.restore(sess, checkpt_file)
 
         ts_size = features.shape[0]
+        step = 0
         ts_step = 0
         ts_loss = 0.0
         ts_acc = 0.0
 
         while ts_step * batch_size < ts_size:
-            loss_value_ts, acc_ts = sess.run([loss, accuracy],
-                feed_dict={
-                    ftr_in: features[ts_step*batch_size:(ts_step+1)*batch_size],
-                    bias_in: biases[ts_step*batch_size:(ts_step+1)*batch_size],
-                    lbl_in: y_test[ts_step*batch_size:(ts_step+1)*batch_size],
-                    msk_in: test_mask[ts_step*batch_size:(ts_step+1)*batch_size],
-                    is_train: False,
-                    attn_drop: 0.0, ffd_drop: 0.0})
-            ts_loss += loss_value_ts
-            ts_acc += acc_ts
-            ts_step += 1
+            if test_mask[step * batch_size:(step + 1) * batch_size][0][0] == 1.0:
+                out_ts, loss_value_ts, acc_ts = sess.run([log_resh, loss, accuracy],
+                    feed_dict={
+                        ftr_in: features[step*batch_size:(step+1)*batch_size],
+                        bias_in: biases[step*batch_size:(step+1)*batch_size],
+                        lbl_in: y_test[step*batch_size:(step+1)*batch_size],
+                        msk_in: test_mask[step*batch_size:(step+1)*batch_size],
+                        is_train: False,
+                        attn_drop: 0.0, ffd_drop: 0.0})
+                ts_loss += loss_value_ts
+                ts_acc += acc_ts
+                ts_step += 1
+            step += 1
 
         print('Test loss:', ts_loss/ts_step, '; Test accuracy:', ts_acc/ts_step)
 
