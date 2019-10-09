@@ -55,7 +55,7 @@ class feature:
 
                 return vectorizer
 
-            def get_wordemb_features(unique=True, glove='/Users/animeshprasad/PycharmProjects/glove/glove.6B.50d.txt'):
+            def get_wordemb_features(unique=True, glove='/Users/nus/Desktop/glove/glove.6B.50d.txt'):
                 #To capture textual features no lowerization
                 all_words = preprocess_string(all_text)
                 if unique:
@@ -91,8 +91,8 @@ class preprocessor:
                     label_file_name=None,
                     extension='.txt.final', is_train=True):
 
-            ratio = 0.3
-            nb_nodes = 4000
+            ratio = 1.0
+            nb_nodes = 1200
             current_dir = os.getcwd()
             dir_name = current_dir + '/' + dir_name
 
@@ -134,19 +134,39 @@ class preprocessor:
                             try:
                                 lines = f.readlines()
                                 text = ' '.join([s.strip() for s in lines])
-                                #keyword = keywords(text, scores=True, lemmatize=False, words=nb_nodes/2)
-                                #keyword_list = [k[0] for k in keyword]
-                                #keyword_score = [k[1] for k in keyword]
-
 
                                 gra = get_graph(text)
                                 token_list = gra.nodes()
-                                #print ('before', len(token_list))
-                                #for token in token_list:
-                                #    if token not in keyword_list:
-                                #        gra.del_node(token)
-                                #token_list = gra.nodes()
-                                #print('after', len(token_list))
+
+                                if token_list > nb_nodes:
+                                    ratio = 0.7
+                                else:
+                                    ratio = 0.99 #sans unreachable nodes
+
+                                keyword = keywords(text, scores=True, lemmatize=False, ratio=ratio)
+                                keyword_list = [k[0] for k in keyword]
+                                keyword_score = [k[1] for k in keyword]
+
+                                keyword_list_full = []
+                                keyword_score_full = []
+                                for kindex, keyp in enumerate(keyword_list):
+                                    if ' ' in keyp:
+                                        a = keyp.split()
+                                        for k in a:
+                                            keyword_list_full.append(k.strip())
+                                            keyword_score_full.append(keyword_score[kindex])
+                                    else:
+                                        keyword_list_full.append(keyp)
+                                        keyword_score_full.append(keyword_score[kindex])
+
+
+
+                                print ('before', len(token_list))
+                                for token in token_list:
+                                    if token not in keyword_list_full:
+                                        gra.del_node(token)
+                                token_list = gra.nodes()
+                                print('after', len(token_list))
                                 adj = build_adjacency_matrix(gra).todense()
                                 np.fill_diagonal(adj, 1)
                                 #print (adj[0])
@@ -158,6 +178,9 @@ class preprocessor:
                                 adj = adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt)
                                 #print(adj[0])
 
+                                adj = np.dot(np.diag(keyword_score_full), adj)
+                                #print(adj[0])
+
 
 
                                 #feat = np.array(feature_extractor.subword_embeddings_lookup.transform(token_list).todense())
@@ -167,11 +190,9 @@ class preprocessor:
                                     try:
                                     #if node_text in feature_extractor.word_embeddings.keys():
                                         feat.append(np.array(feature_extractor.word_embeddings[node_text]))
-                                        print('-')
                                     except:
                                     #else:
                                         feat.append(np.random.uniform(size=50))
-                                        print('*')
                                 feat=np.array(feat)
 
                                 #feat = np.random.rand(adj.shape[0], feat_dim)
@@ -188,13 +209,13 @@ class preprocessor:
                                         #     y_all[i][0] = 0
                                         #     y_all[i][1] = 1
 
-                                #print (a, len(my_dict_label_splitted[item[0:4]]))
+                                print ('keywords found to all ratio: ', a, len(my_dict_label_splitted[item[0:4]]))
 
                                 y_train, y_val, y_test  = np.zeros(y_all.shape), np.zeros(y_all.shape), np.zeros(y_all.shape)
                                 y_train_mask, y_val_mask, y_test_mask = np.zeros(adj.shape[0]), np.zeros(adj.shape[0]), np.zeros(
                                     adj.shape[0])
                                 if is_train:
-                                    if count % 3 == 0:
+                                    if count % 10 == 0:
                                         y_val = y_all
                                         y_val_mask = np.ones(adj.shape[0])
                                     else:
@@ -225,7 +246,7 @@ class preprocessor:
                                     a[:y.shape[0]]= y
                                     return a
 
-                                y_train_padded  = get_pad(y_train)
+                                y_train_padded = get_pad(y_train)
                                 y_val_padded = get_pad(y_val)
                                 y_test_padded = get_pad(y_test)
                                 y_train_mask_padded = get_pad_mask(y_train_mask)

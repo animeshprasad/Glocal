@@ -7,22 +7,21 @@ from utils import process
 from keyphrase_data.SemEval2010 import parse_input
 import pickle
 
+dataset = 'semeval'
 checkpt_file = 'pre_trained/cora/mod_cora.ckpt'
-train_file = 'data/train.pkl'
-test_file = 'data/test.pkl'
+train_file = 'data/' + dataset + '.train'
+test_file = 'data/' + dataset + '.test'
 
-
-dataset = 'cora'
 
 # training params
 batch_size = 1
-nb_epochs = 10
+nb_epochs = 20
 patience = 10
-lr = 0.001  # learning rate
+lr = 0.0001  # learning rate
 l2_coef = 0.0005  # weight decay
-hid_units = [4] # numbers of hidden units per each attention head in each layer
-n_heads = [4, 1] # additional entry for the output layer
-residual = False
+hid_units = [32] # numbers of hidden units per each attention head in each layer
+n_heads = [16, 1] # additional entry for the output layer
+residual = True
 nonlinearity = tf.nn.elu
 model = GAT
 
@@ -38,21 +37,26 @@ print('residual: ' + str(residual))
 print('nonlinearity: ' + str(nonlinearity))
 print('model: ' + str(model))
 
-#lgraphs, lgraph_features = None, None
-# try:
-#     file = open(train_file, 'rb')
-#     pickle.load((lgraphs, lgraph_features), file)
-# except IOError:
-#     file = open(train_file, 'wb')
-#     X = parse_input.preprocessor()
-#     lgraphs, lgraph_features = X.extract('keyphrase_data/SemEval2010/train/', 'keyphrase_data/SemEval2010/train/train.combined.stem.final')
-#     pickle.dump((lgraphs, lgraph_features), file)
 
 
-X = parse_input.preprocessor()
-lgraphs, lgraph_features = X.extract('keyphrase_data/SemEval2010/train/', 'keyphrase_data/SemEval2010/train/train.combined.final')
+adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = None, None, None, None, None, None, None, None
 
-adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = lgraph_features
+try:
+    adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = pickle.load(open(train_file + str(0), 'rb')), \
+        pickle.load(open(train_file + str(1), 'rb')), pickle.load(open(train_file + str(2), 'rb')), \
+        pickle.load(open(train_file + str(3), 'rb')), pickle.load(open(train_file + str(4), 'rb')), \
+        pickle.load(open(train_file + str(5), 'rb')), pickle.load(open(train_file + str(6), 'rb')), \
+        pickle.load(open(train_file + str(7), 'rb'))
+except Exception as e:
+    print (e)
+    X = parse_input.preprocessor()
+    lgraphs, lgraph_features = X.extract('keyphrase_data/SemEval2010/train/',
+                                         'keyphrase_data/SemEval2010/train/train.combined.final')
+    for i, items in enumerate(list(lgraph_features)):
+        pickle.dump(items, open(train_file + str(i), 'wb'))
+    adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = lgraph_features
+
+
 
 print (adj.shape, features.shape, y_train.shape, y_val.shape, y_test.shape, train_mask.shape, val_mask.shape, test_mask.shape )
 
@@ -60,7 +64,7 @@ nb_nodes = features[0].shape[0]
 ft_size = features[0].shape[1]
 nb_classes = y_train[0].shape[1]
 
-biases = adj
+biases = adj    #.transpose(0,2,1)
 
 with tf.Graph().as_default():
     with tf.name_scope('input'):
@@ -83,7 +87,7 @@ with tf.Graph().as_default():
     msk_resh = tf.reshape(msk_in, [-1])
     #log_resh = tf.Print(log_resh, [log_resh])
     #lab_resh = tf.Print(lab_resh, [lab_resh])
-    loss = model.masked_softmax_cross_entropy(log_resh, lab_resh, msk_resh)
+    loss = model.masked_sigmoid_cross_entropy(log_resh, lab_resh, msk_resh)
     accuracy = model.masked_accuracy(log_resh, lab_resh, msk_resh)
     train_op = model.training(loss, lr, l2_coef)
 
@@ -97,6 +101,7 @@ with tf.Graph().as_default():
 
     with tf.Session() as sess:
         sess.run(init_op)
+        writer = tf.summary.FileWriter('./temp/graph', sess.graph)
 
         train_loss_avg = 0
         train_acc_avg = 0
@@ -126,6 +131,7 @@ with tf.Graph().as_default():
             step = 0
             vl_step = 0
             vl_size = features.shape[0]
+            count_in = 0.0
 
             while step * batch_size < vl_size:
                 if val_mask[step * batch_size:(step+1) * batch_size][0][0] == 1.0:
@@ -142,11 +148,16 @@ with tf.Graph().as_default():
                     vl_step += 1
 
                     unique, counts = np.unique(np.argmax(out_vl, axis=1), return_counts=True)
-                    print (dict(zip(unique, counts)))
+                    #print (dict(zip(unique, counts)))
+
+                    out_vl_report = out_vl[:, 1].argsort()[-25:][::-1]
+                    y_val_report = np.where(y_val[step * batch_size][:, 1] == 1)
+                    #print (set(out_vl_report).intersection(set(list(y_val_report[0]))))
+                    count_in += len(set(out_vl_report).intersection(set(list(y_val_report[0]))))*1.0 / len(set(list(y_val_report[0])))
 
                 step += 1
 
-
+            print ('Keywords in top 25: %.5f' % (count_in/vl_step))
 
             print('Training: loss = %.5f, acc = %.5f | Val: loss = %.5f, acc = %.5f' %
                     (train_loss_avg/tr_step, train_acc_avg/tr_step,
@@ -180,7 +191,7 @@ with tf.Graph().as_default():
         ts_loss = 0.0
         ts_acc = 0.0
 
-        while ts_step * batch_size < ts_size:
+        while step * batch_size < ts_size:
             if test_mask[step * batch_size:(step + 1) * batch_size][0][0] == 1.0:
                 out_ts, loss_value_ts, acc_ts = sess.run([log_resh, loss, accuracy],
                     feed_dict={

@@ -88,6 +88,8 @@ with tf.Graph().as_default():
     with tf.Session() as sess:
         sess.run(init_op)
 
+        writer = tf.summary.FileWriter('./graph', sess.graph)
+
         train_loss_avg = 0
         train_acc_avg = 0
         val_loss_avg = 0
